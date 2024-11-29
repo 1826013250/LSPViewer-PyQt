@@ -1,17 +1,20 @@
 import sys
+from io import BytesIO
 from uuid import uuid4
-from PyQt6.QtCore import Qt, QThreadPool, pyqtSignal, QTimer
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, QThreadPool, pyqtSignal, QTimer, pyqtSlot
+from PyQt6.QtGui import QPixmap, QAction, QImage
 from PyQt6.QtWidgets import (QApplication, QWidget, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QSizePolicy,
-                             QMessageBox)
+                             QMessageBox, QLabel, QDialog)
+from os.path import join as p_join
 
-from widgets import PixmapLabel
+from widgets import PixmapLabel, TaskViewWindow
 from configs import load_config
 from threads import GetPictureURLsWorker, DownloaderWorker
+from time import sleep
 
 
 class MainWindow(QMainWindow):  # MainWindow class definition
-    term_signal = pyqtSignal()
+    term_signal = pyqtSignal(str)
     update_image_urls_signal = pyqtSignal(int)
 
     def __init__(self):
@@ -25,23 +28,31 @@ class MainWindow(QMainWindow):  # MainWindow class definition
         self.container.layout().setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignTop)
 
         self.menubar = self.menuBar()  # Get Menubar
+        self.function_menu = self.menubar.addMenu('&Function')
         self.statusbar = self.statusBar()  # Get Statusbar
 
         self.resize(500, 650)
-        self.__init_widgets()
 
         self.thread_pool = QThreadPool()
 
         self.images = []  # A List for storing QPixmap
-        self.image_urls = []  # A List for storing picture download URL
+        self.image_data = []  # A List for storing picture download URL
+        self.previous_images = []
+        self.previous_image_index = 0
         self.current_image = None  # Current displaying image variable
         self.getting_url = False  # A flag for checking whether the GET URL THREAD is running
-        self.progresses = {}
+        self.progresses_getimage = {}
+        self.progresses_saveimage = {}
 
         self.timer = QTimer()
         self.timer.setInterval(100)
         self.timer.timeout.connect(self.refresh_image)
         self.timer.start()
+
+        self.task_viewer = TaskViewWindow(self)
+
+        self.__init_widgets()
+        self.__init_menubar()
 
     def __init_widgets(self):
         self.image = PixmapLabel(self)
@@ -55,9 +66,11 @@ class MainWindow(QMainWindow):  # MainWindow class definition
         self.button_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         self.btn_prev = QPushButton('<<Previous')
         self.btn_prev.setStatusTip("Display the previous image.")
+        self.btn_prev.clicked.connect(self.get_previous_image)
         self.btn_prev.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self.btn_save = QPushButton('Save')
         self.btn_save.setStatusTip("Save the image into the targeted directory.")
+        self.btn_save.clicked.connect(self.save_image)
         self.btn_save.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self.btn_next = QPushButton('Next>>')
         self.btn_next.setStatusTip("Display the next image.")
@@ -68,46 +81,106 @@ class MainWindow(QMainWindow):  # MainWindow class definition
         self.button_layout.addWidget(self.btn_next)
         self.container.layout().addLayout(self.button_layout)
 
+    def __init_menubar(self):
+        self.show_task_view_action = QAction("Show TaskViewer", self)
+        self.show_task_view_action.triggered.connect(self.task_viewer.show)
+        self.function_menu.addAction(self.show_task_view_action)
+
+    def closeEvent(self, a0):
+        if self.progresses_saveimage:
+            r = QMessageBox.warning(self, 'Warning', 'There are Saving work in the background.\n'
+                                    'Are you sure to exit now?',
+                                    QMessageBox.StandardButton.No | QMessageBox.StandardButton.Yes,
+                                    QMessageBox.StandardButton.No)
+            if r == QMessageBox.StandardButton.No:
+                return a0.ignore()
+        self.term_signal.emit("all")
+        self.task_viewer.close()
+        super().closeEvent(a0)
+
+    def save_image(self):
+        if self.current_image is not None:
+            data = self.previous_images[self.previous_image_index][1]
+            if self.configs["view_quality"] != self.configs["save_quality"]:
+                uid = "Save:" + uuid4().hex
+                worker = DownloaderWorker(data, uid, self.configs, "download")
+                self.update_progress(uid, 0)
+                self.term_signal.connect(worker.signals.terminate)
+                worker.signals.progress.connect(self.update_progress)
+                worker.signals.error.connect(self.deal_errors)
+                worker.signals.stop.connect(self.cleanup_progress)
+                worker.signals.finish_download.connect(self.get_image_finished)
+                self.thread_pool.start(worker)
+            else:
+                data["download"] = True
+                self.get_image_finished(self.previous_images[self.previous_image_index][0], 0, data)
+            QMessageBox.information(self, "Info", "Started download in the background.\n"
+                                    "Filename:\n" +
+                                    p_join(self.configs["save_dir"], f'{data["pid"]}-{data["title"]} by'
+                                                                     f'{data["author"]}.{data["ext"]}')
+                                    )
+        else:
+            QMessageBox.warning(self, "Info", "No images present now.")
+
     def get_images(self):
-        if self.images:
-            self.current_image = self.images.pop(0)
+        if self.images and self.previous_image_index == 0:
+            self.previous_images.insert(0, self.images.pop(0))
+            self.current_image = self.previous_images[0][0]
+            if len(self.previous_images) > self.configs["keep_num"] + 1:
+                self.previous_images.pop()
+        elif self.previous_image_index > 0:
+            self.previous_image_index -= 1
+            self.current_image = self.previous_images[self.previous_image_index][0]
         else:
             self.current_image = None
-        if self.image_urls:
+        if self.image_data:
             self.start_download_worker()
-        if len(self.image_urls) <= self.configs.get('cache_num') and not self.getting_url:
+        if len(self.image_data) <= self.configs.get('cache_num') and not self.getting_url:
             print("Start GET URL Thread")
             self.getting_url = True
-            worker = GetPictureURLsWorker(self.configs, len(self.image_urls))
+            worker = GetPictureURLsWorker(self.configs, len(self.image_data))
             self.update_image_urls_signal.connect(worker.signals.update_url_count)
             worker.signals.error.connect(self.deal_errors)
             worker.signals.return_urls.connect(self.update_image_urls)
             worker.signals.finish_geturl.connect(self.get_url_finished)
             self.thread_pool.start(worker)
 
+    def get_previous_image(self):
+        if self.current_image is None and self.previous_images:
+            self.current_image = self.previous_images[self.previous_image_index][0]
+        elif self.previous_image_index + 1 >= len(self.previous_images):
+            return self.deal_errors("no_previous_pic")
+        else:
+            self.previous_image_index += 1
+            self.current_image = self.previous_images[self.previous_image_index][0]
+
     def start_download_worker(self):
-        while len(self.images) + len(self.progresses) < self.configs.get('cache_num') and self.image_urls:
-            print("added")
+        while len(self.images) + len(self.progresses_getimage) < self.configs.get('cache_num') and self.image_data:
             uid = uuid4().hex
-            worker = DownloaderWorker(self.image_urls.pop(0), uid)
+            worker = DownloaderWorker(self.image_data.pop(0), uid, self.configs)
             self.update_progress(uid, 0)
             self.term_signal.connect(worker.signals.terminate)
             worker.signals.progress.connect(self.update_progress)
             worker.signals.error.connect(self.deal_errors)
             worker.signals.finish_download.connect(self.get_image_finished)
+            worker.signals.stop.connect(self.cleanup_progress)
             self.thread_pool.start(worker)
 
     def update_progress(self, uid, progress):
-        self.progresses[uid] = progress
+        if uid[:4] == "Save":
+            self.progresses_saveimage[uid] = progress
+        else:
+            self.progresses_getimage[uid] = progress
 
     def refresh_image(self):
         if self.current_image:
             self.image.set_original_pixmap(self.current_image)
         elif self.current_image is None and self.images:
-            self.current_image = self.images.pop(0)
-        elif self.progresses:
+            self.previous_images.insert(0, self.images.pop(0))
+            self.current_image = self.previous_images[0][0]
+        elif self.progresses_getimage:
             self.image.set_original_pixmap(None)
-            max_id, max_progress = max(self.progresses.items(), key=lambda x: x[1])
+            max_id, max_progress = max(self.progresses_getimage.items(), key=lambda x: x[1])
             self.image.setText("Fastest worker id: %s\nProgress: %.2f%%" % (max_id, max_progress))
         elif self.getting_url:
             self.image.setText("Fetching URLs. Please wait...")
@@ -115,30 +188,52 @@ class MainWindow(QMainWindow):  # MainWindow class definition
             self.image.set_original_pixmap(None)
             self.image.setText("Here's images.")
 
-    def deal_errors(self, error):
+    def deal_errors(self, error, uid=''):
         if error == "get_url_failed":
             QMessageBox.warning(self, 'Error', 'There was an error when fetching the urls of pictures.'
-                                '\nPlease press the "Next" button to retry.')
+                                '\nPlease check your Internet connection.'
+                                '\nPress the "Next" button to retry.')
+            self.getting_url = False
         elif error == "get_pic_failed":
-            QMessageBox.warning(self, 'Error', 'There was an error when fetching the pictures.')
+            QMessageBox.information(self, 'Error', 'There was an error when fetching the pictures.\n'
+                                    'Please check your Internet connection.')
+            self.cleanup_progress(uid)
+        elif error == "save_pic_failed":
+            QMessageBox.warning(self, 'Error', 'There was an error when saving the pictures.'
+                                '\nPlease check your Internet connection and the destination directory.')
+            self.cleanup_progress(uid)
         elif error == "no_pic":
-            QMessageBox.warning(self, 'Error', "There's no picture related to the specific tag(s) or artist(s).")
+            QMessageBox.warning(self, 'Error', "There's no picture related to the specific tag(s) or artist(s)."
+                                "\nPlease change the tags filter in the settings.")
+        elif error == "no_previous_pic":
+            QMessageBox.warning(self, 'Error', "There's no previous picture.")
 
     def update_image_urls(self, urls):  # Extend the image_url list, then return the current url count to the sub-thread
-        self.image_urls.extend(urls)
-        self.update_image_urls_signal.emit(len(self.image_urls))
+        self.image_data.extend(urls)
+        self.update_image_urls_signal.emit(len(self.image_data))
 
     def get_url_finished(self):
         self.getting_url = False
-        print(self.image_urls)
-        print(len(self.image_urls))
+        print(self.image_data)
+        print(len(self.image_data))
         self.start_download_worker()
 
-    def get_image_finished(self, pixmap, uid):
-        if uid in self.progresses.keys():
-            self.progresses.pop(uid)
-        self.images.append(pixmap)
-        self.start_download_worker()
+    def cleanup_progress(self, uid):
+        if uid in self.progresses_getimage.keys():
+            self.progresses_getimage.pop(uid)
+        if uid in self.progresses_saveimage.keys():
+            self.progresses_saveimage.pop(uid)
+
+    def get_image_finished(self, pixmap, uid, details):
+        if details.get("download"):
+            self.cleanup_progress(uid)
+            pixmap.save(p_join(self.configs["save_dir"], f'{details["pid"]}-{details["title"]} by'
+                                                         f'{details["author"]}.{details["ext"]}'))
+            print("saved")
+        else:
+            self.cleanup_progress(uid)
+            self.images.append((pixmap, details))
+            self.start_download_worker()
 
 
 if __name__ == '__main__':
