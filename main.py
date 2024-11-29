@@ -1,16 +1,15 @@
 import sys
-from io import BytesIO
 from uuid import uuid4
-from PyQt6.QtCore import Qt, QThreadPool, pyqtSignal, QTimer, pyqtSlot
-from PyQt6.QtGui import QPixmap, QAction, QImage
+from PyQt6.QtCore import Qt, QThreadPool, pyqtSignal, QTimer
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (QApplication, QWidget, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QSizePolicy,
-                             QMessageBox, QLabel, QDialog)
+                             QMessageBox)
 from os.path import join as p_join
+from sys import platform
 
-from widgets import PixmapLabel, TaskViewWindow
+from widgets import PixmapLabel, TaskViewWindow, SettingsDialog
 from configs import load_config
 from threads import GetPictureURLsWorker, DownloaderWorker
-from time import sleep
 
 
 class MainWindow(QMainWindow):  # MainWindow class definition
@@ -28,12 +27,12 @@ class MainWindow(QMainWindow):  # MainWindow class definition
         self.container.layout().setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignTop)
 
         self.menubar = self.menuBar()  # Get Menubar
-        self.function_menu = self.menubar.addMenu('&Function')
         self.statusbar = self.statusBar()  # Get Statusbar
 
         self.resize(500, 650)
 
         self.thread_pool = QThreadPool()
+        self.thread_pool_for_save = QThreadPool()
 
         self.images = []  # A List for storing QPixmap
         self.image_data = []  # A List for storing picture download URL
@@ -50,13 +49,14 @@ class MainWindow(QMainWindow):  # MainWindow class definition
         self.timer.start()
 
         self.task_viewer = TaskViewWindow(self)
+        self.settings_dialog = SettingsDialog(self.configs, self)
 
         self.__init_widgets()
         self.__init_menubar()
 
     def __init_widgets(self):
         self.image = PixmapLabel(self)
-        self.image.setText("Here's Images")
+        self.image.setText("Here shows images.")
         self.image.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         self.image.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.image.setStatusTip("Here showing the images. If no images present the only text displays.")
@@ -82,9 +82,38 @@ class MainWindow(QMainWindow):  # MainWindow class definition
         self.container.layout().addLayout(self.button_layout)
 
     def __init_menubar(self):
-        self.show_task_view_action = QAction("Show TaskViewer", self)
-        self.show_task_view_action.triggered.connect(self.task_viewer.show)
-        self.function_menu.addAction(self.show_task_view_action)
+        self.file_menu = self.menubar.addMenu('&File')
+        self.function_menu = self.menubar.addMenu('F&unction')
+
+        self.action_save = QAction('&Save', self)
+        self.action_save.setShortcut('Ctrl+S')
+        self.action_save.setStatusTip('Save the image into the targeted directory.')
+        self.action_save.triggered.connect(self.save_image)
+        self.file_menu.addAction(self.action_save)
+
+        self.file_menu.addSeparator()
+
+        self.action_previous = QAction('&Previous', self)
+        self.action_previous.setShortcut(Qt.Key.Key_Left)
+        self.action_previous.setStatusTip('Display the previous image.')
+        self.action_previous.triggered.connect(self.get_previous_image)
+        self.file_menu.addAction(self.action_previous)
+
+        self.action_next = QAction('&Next', self)
+        self.action_next.setShortcut(Qt.Key.Key_Right)
+        self.action_next.setStatusTip('Display the next image.')
+        self.action_next.triggered.connect(self.get_images)
+        self.file_menu.addAction(self.action_next)
+
+        self.action_show_task_view = QAction("Show TaskViewer", self)
+        self.action_show_task_view.setShortcut('Ctrl+T')
+        self.action_show_task_view.triggered.connect(self.task_viewer.show)
+        self.function_menu.addAction(self.action_show_task_view)
+
+        settings_name = "Preference" if platform == "darwin" else "Settings"
+        self.action_show_settings_dialog = QAction(settings_name, self)
+        self.action_show_settings_dialog.triggered.connect(self.settings_dialog.exec)
+        self.function_menu.addAction(self.action_show_settings_dialog)
 
     def closeEvent(self, a0):
         if self.progresses_saveimage:
@@ -110,7 +139,7 @@ class MainWindow(QMainWindow):  # MainWindow class definition
                 worker.signals.error.connect(self.deal_errors)
                 worker.signals.stop.connect(self.cleanup_progress)
                 worker.signals.finish_download.connect(self.get_image_finished)
-                self.thread_pool.start(worker)
+                self.thread_pool_for_save.start(worker)
             else:
                 data["download"] = True
                 self.get_image_finished(self.previous_images[self.previous_image_index][0], 0, data)
@@ -126,6 +155,7 @@ class MainWindow(QMainWindow):  # MainWindow class definition
         if self.images and self.previous_image_index == 0:
             self.previous_images.insert(0, self.images.pop(0))
             self.current_image = self.previous_images[0][0]
+            print(self.previous_images[0][1])
             if len(self.previous_images) > self.configs["keep_num"] + 1:
                 self.previous_images.pop()
         elif self.previous_image_index > 0:
@@ -186,7 +216,7 @@ class MainWindow(QMainWindow):  # MainWindow class definition
             self.image.setText("Fetching URLs. Please wait...")
         else:
             self.image.set_original_pixmap(None)
-            self.image.setText("Here's images.")
+            self.image.setText("Here shows images.")
 
     def deal_errors(self, error, uid=''):
         if error == "get_url_failed":

@@ -1,7 +1,8 @@
 from PyQt6.QtCore import Qt, QSize, QTimer
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap, QShortcut, QKeySequence
 from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QPushButton, QListView, \
-    QProgressBar, QHBoxLayout, QRadioButton
+    QProgressBar, QHBoxLayout, QRadioButton, QDialog, QTabWidget, QGridLayout, QLineEdit, QSizePolicy, QFileDialog, \
+    QMessageBox
 
 
 class PixmapLabel(QLabel):
@@ -83,7 +84,7 @@ class TaskViewWindow(QWidget):
         progresses = self.mainwindow.progresses_getimage
         progresses.update(self.mainwindow.progresses_saveimage)
         for k, v in progresses.items():
-            item = QListWidgetItem((k + (" " * 10))[:10])
+            item = QListWidgetItem((k + (" " * 10))[:10] + " - %.2f%%" % v)
             self.list.addItem(item)
             progress = QProgressBar()
             progress.setRange(0, 100)
@@ -91,3 +92,66 @@ class TaskViewWindow(QWidget):
             progress.setValue(int(v))
             self.list.setItemWidget(item, progress)
 
+
+class SettingsDialog(QDialog):
+    def __init__(self, configs, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setLayout(QVBoxLayout())
+        self.tab_widget = QTabWidget()
+        self.layout().addWidget(self.tab_widget)
+        self.configs = configs.copy()
+        self.mainwindow = parent
+        self.__init_widgets()
+
+        self.close_shortcut = QShortcut(QKeySequence("Ctrl+W"), self)
+        self.close_shortcut.activated.connect(self.close)
+
+    def __init_widgets(self):
+        self.download_settings = QWidget()
+        self.tab_widget.addTab(self.download_settings, "Download")
+        self.download_settings.setLayout(QGridLayout())
+        label_save_directory = QLabel("Save Directory:")
+        label_save_directory.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        label_save_directory.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.download_settings.layout().addWidget(label_save_directory, 0, 0)
+        file_selection_layout = QHBoxLayout()
+        self.directory_text = QLineEdit()
+        self.directory_text.setText(self.configs["save_dir"])
+        self.directory_text.textChanged.connect(self.update_configs_directory)
+        file_selection_layout.addWidget(self.directory_text)
+        directory_select_btn = QPushButton("Select...")
+        directory_select_btn.clicked.connect(self.select_directory)
+        directory_select_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        file_selection_layout.addWidget(directory_select_btn)
+        self.download_settings.layout().addLayout(file_selection_layout, 0, 1)
+
+    def select_directory(self):
+        directory = QFileDialog.getExistingDirectory(self, "Select Directory")
+        self.directory_text.setText(directory)
+
+    def update_configs_directory(self):
+        self.configs["save_dir"] = self.directory_text.text()
+        print(self.configs["save_dir"])
+        print("??ASD?")
+
+    def closeEvent(self, event):
+        if self.configs != self.mainwindow.configs:
+            r = QMessageBox.warning(self, "Warning", "You have unsaved changes.\nSave them?",
+                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No |
+                                    QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
+            if r == QMessageBox.StandardButton.Yes:
+                ...
+            elif r == QMessageBox.StandardButton.No:
+                pass
+            elif r == QMessageBox.StandardButton.Cancel:
+                return event.ignore()
+        super().closeEvent(event)
+
+    def save_changes(self):
+
+        self.mainwindow.term_signal.emit("fetch")
+        if self.configs["tag"] != self.mainwindow.configs["tag"]:
+            self.mainwindow.images.clear()
+            self.mainwindow.image_data.clear()
+        self.mainwindow.configs = self.configs

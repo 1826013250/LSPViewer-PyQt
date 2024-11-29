@@ -37,7 +37,7 @@ class GetPictureURLsWorker(QRunnable):
                             json={
                                 'r18': self.configs.get('r18'),
                                 'num': 20,
-                                'tag': [['萝莉', '女孩子']],
+                                'tag': self.configs['tag'],
                                 'size': ['original', 'regular', 'small', 'thumb', 'mini']
                             }).json().get("data")
             except:
