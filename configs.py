@@ -5,6 +5,6 @@ def load_config():
         "view_quality": "small",
         "save_quality": "original",
         "save_dir": "/Users/msx/Documents/PyCharmWorkspace/LSPViewer-Qt/out",
-        "tag": [["StableDiffusion"]],
-        "r18": 2
+        "tag": [],
+        "r18": 0
     }

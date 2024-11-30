@@ -1,7 +1,7 @@
 from PyQt6.QtCore import QRunnable, pyqtSignal, QObject
 from PyQt6.QtGui import QPixmap, QImage
 from io import BytesIO
-from requests import get, post
+from requests import get, post, ConnectionError, ConnectTimeout, exceptions
 from time import sleep
 from uuid import uuid4
 
@@ -40,7 +40,7 @@ class GetPictureURLsWorker(QRunnable):
                                 'tag': self.configs['tag'],
                                 'size': ['original', 'regular', 'small', 'thumb', 'mini']
                             }).json().get("data")
-            except:
+            except (ConnectionError, ConnectTimeout, exceptions.SSLError):
                 return self.signals.error.emit('get_url_failed', self.uuid)
             if not info:
                 return self.signals.error.emit("no_pic", self.uuid)
@@ -90,7 +90,7 @@ class DownloaderWorker(QRunnable):
                     if total > 0:
                         self.signals.progress.emit(self.uuid, current / total * 100)
                 sleep(0.01)
-        except:
+        except (ConnectionError, ConnectTimeout, exceptions.SSLError):
             if self.type == 'fetch':
                 self.signals.error.emit('get_pic_failed', self.uuid)
             elif self.type == 'download':

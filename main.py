@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QMainWindow, QPushButton, QV
 from os.path import join as p_join
 from sys import platform
 
-from widgets import PixmapLabel, TaskViewWindow, SettingsDialog
+from widgets import PixmapLabel, TaskViewWindow, SettingsDialog, WaitForTaskDialog
 from configs import load_config
 from threads import GetPictureURLsWorker, DownloaderWorker
 
@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):  # MainWindow class definition
 
         self.task_viewer = TaskViewWindow(self)
         self.settings_dialog = SettingsDialog(self.configs, self)
+        self.close_waiter = WaitForTaskDialog(self)
 
         self.__init_widgets()
         self.__init_menubar()
@@ -123,8 +124,9 @@ class MainWindow(QMainWindow):  # MainWindow class definition
                                     QMessageBox.StandardButton.No)
             if r == QMessageBox.StandardButton.No:
                 return a0.ignore()
-        self.term_signal.emit("all")
         self.task_viewer.close()
+        self.close_waiter.timer.start()
+        self.close_waiter.exec()
         super().closeEvent(a0)
 
     def save_image(self):

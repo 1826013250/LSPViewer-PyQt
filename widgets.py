@@ -1,6 +1,6 @@
 from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QPixmap, QShortcut, QKeySequence
-from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QPushButton, QListView, \
+from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QPushButton, \
     QProgressBar, QHBoxLayout, QRadioButton, QDialog, QTabWidget, QGridLayout, QLineEdit, QSizePolicy, QFileDialog, \
     QMessageBox
 
@@ -68,7 +68,7 @@ class TaskViewWindow(QWidget):
         self.btn_layout.addWidget(self.btn_killall)
         self.layout().addLayout(self.btn_layout)
 
-    def update_radio_selection(self, event):
+    def update_radio_selection(self):
         if self.radio_all.isChecked():
             self.selection = "all"
         if self.radio_get.isChecked():
@@ -81,8 +81,8 @@ class TaskViewWindow(QWidget):
 
     def update_list(self):
         self.list.clear()
-        progresses = self.mainwindow.progresses_getimage
-        progresses.update(self.mainwindow.progresses_saveimage)
+        progresses = self.mainwindow.progresses_getimage.copy()
+        progresses.update(self.mainwindow.progresses_saveimage.copy())
         for k, v in progresses.items():
             item = QListWidgetItem((k + (" " * 10))[:10] + " - %.2f%%" % v)
             self.list.addItem(item)
@@ -155,3 +155,35 @@ class SettingsDialog(QDialog):
             self.mainwindow.images.clear()
             self.mainwindow.image_data.clear()
         self.mainwindow.configs = self.configs
+
+
+class WaitForTaskDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Waiting...")
+        self.mainwindow = parent
+        self.setLayout(QVBoxLayout())
+        label = QLabel("Waiting for the running tasks...")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.layout().addWidget(label)
+        self.task_finished = False
+        self.timer = QTimer()
+        self.timer.setInterval(100)
+        self.timer.timeout.connect(self.detect_tasks)
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
+        self.setFixedSize(300, 70)
+
+    def closeEvent(self, event):
+        if self.task_finished:
+            return super().closeEvent(event)
+        event.ignore()
+
+    def keyPressEvent(self, a0):
+        a0.ignore()
+
+    def detect_tasks(self):
+        self.mainwindow.term_signal.emit("all")
+        if not (self.mainwindow.progresses_getimage or self.mainwindow.progresses_saveimage or
+                self.mainwindow.getting_url):
+            self.task_finished = True
+            self.close()
