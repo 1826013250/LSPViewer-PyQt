@@ -6,5 +6,5 @@ def load_config():
         "save_quality": "original",
         "save_dir": "/Users/msx/Documents/PyCharmWorkspace/LSPViewer-Qt/out",
         "tag": [],
-        "r18": 0
+        "r18": 1
     }

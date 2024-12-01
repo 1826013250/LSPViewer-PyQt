@@ -2,7 +2,8 @@ from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QPixmap, QShortcut, QKeySequence
 from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QPushButton, \
     QProgressBar, QHBoxLayout, QRadioButton, QDialog, QTabWidget, QGridLayout, QLineEdit, QSizePolicy, QFileDialog, \
-    QMessageBox
+    QMessageBox, QButtonGroup
+from functools import partial
 
 
 class PixmapLabel(QLabel):
@@ -28,6 +29,21 @@ class PixmapLabel(QLabel):
             self.setPixmap(original_pixmap.scaled(QSize(self.size().width() - 10, self.size().height() - 10),
                                                   Qt.AspectRatioMode.KeepAspectRatio,
                                                   Qt.TransformationMode.SmoothTransformation))
+
+
+class ReadOnlyLineEdit(QLineEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def contextMenuEvent(self, event):
+        event.ignore()
+
+    def keyPressEvent(self, e):
+        if (e.text() or e.key() == Qt.Key.Key_Backspace or
+                (e.modifiers() == Qt.KeyboardModifier.ControlModifier and e.key() == Qt.Key.Key_X)):
+            e.ignore()
+        else:
+            super().keyPressEvent(e)
 
 
 class TaskViewWindow(QWidget):
@@ -109,14 +125,14 @@ class SettingsDialog(QDialog):
 
     def __init_widgets(self):
         self.download_settings = QWidget()
-        self.tab_widget.addTab(self.download_settings, "Download")
+        self.tab_widget.addTab(self.download_settings, "Images")
         self.download_settings.setLayout(QGridLayout())
         label_save_directory = QLabel("Save Directory:")
         label_save_directory.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         label_save_directory.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self.download_settings.layout().addWidget(label_save_directory, 0, 0)
         file_selection_layout = QHBoxLayout()
-        self.directory_text = QLineEdit()
+        self.directory_text = ReadOnlyLineEdit()
         self.directory_text.setText(self.configs["save_dir"])
         self.directory_text.textChanged.connect(self.update_configs_directory)
         file_selection_layout.addWidget(self.directory_text)
@@ -126,6 +142,100 @@ class SettingsDialog(QDialog):
         file_selection_layout.addWidget(directory_select_btn)
         self.download_settings.layout().addLayout(file_selection_layout, 0, 1)
 
+        label_r18 = QLabel("R18 State:")
+        label_r18.setAlignment(Qt.AlignmentFlag.AlignRight)
+        btn_group_r18 = QButtonGroup()
+        self.r18_radiobuttons = {
+            0: QRadioButton("Off"),
+            1: QRadioButton("On"),
+            2: QRadioButton("Random")
+        }
+        self.r18_radiobuttons[self.configs["r18"]].setChecked(True)
+        for btn in self.r18_radiobuttons.values():
+            btn_group_r18.addButton(btn)
+        btn_r18_layout = QHBoxLayout()
+        for btn in self.r18_radiobuttons.values():
+            btn_r18_layout.addWidget(btn)
+        for btn in self.r18_radiobuttons.values():
+            btn.clicked.connect(partial(self.radiobutton_change, 'r18'))
+        self.download_settings.layout().addWidget(label_r18, 1, 0)
+        self.download_settings.layout().addLayout(btn_r18_layout, 1, 1)
+
+        label_ai = QLabel("Exclude AI works:")
+        label_ai.setAlignment(Qt.AlignmentFlag.AlignRight)
+        btn_group_r18 = QButtonGroup()
+        self.r18_radiobuttons = {
+            0: QRadioButton("Off"),
+            1: QRadioButton("On"),
+            2: QRadioButton("Random")
+        }
+        self.r18_radiobuttons[self.configs["r18"]].setChecked(True)
+        for btn in self.r18_radiobuttons.values():
+            btn_group_r18.addButton(btn)
+        btn_r18_layout = QHBoxLayout()
+        for btn in self.r18_radiobuttons.values():
+            btn_r18_layout.addWidget(btn)
+        for btn in self.r18_radiobuttons.values():
+            btn.clicked.connect(partial(self.radiobutton_change, 'r18'))
+        self.download_settings.layout().addWidget(label_r18, 1, 0)
+        self.download_settings.layout().addLayout(btn_r18_layout, 1, 1)
+
+        label_view_quality = QLabel("View Quality:")
+        label_view_quality.setAlignment(Qt.AlignmentFlag.AlignRight)
+        btn_group_1 = QButtonGroup()
+        self.view_quality_radiobuttons = {
+            "mini": QRadioButton("Pooh"),
+            "thumb": QRadioButton("Low"),
+            "small": QRadioButton("Medium"),
+            "regular": QRadioButton("High"),
+            "original": QRadioButton("Original")
+        }
+        self.view_quality_radiobuttons[self.configs["view_quality"]].setChecked(True)
+        for btn in self.view_quality_radiobuttons.values():
+            btn_group_1.addButton(btn)
+        btn_layout_1 = QHBoxLayout()
+        for btn in self.view_quality_radiobuttons.values():
+            btn_layout_1.addWidget(btn)
+        for btn in self.view_quality_radiobuttons.values():
+            btn.clicked.connect(partial(self.radiobutton_change, "view"))
+        self.download_settings.layout().addWidget(label_view_quality, 3, 0)
+        self.download_settings.layout().addLayout(btn_layout_1, 3, 1)
+
+        label_save_quality = QLabel("Save Quality:")
+        label_save_quality.setAlignment(Qt.AlignmentFlag.AlignRight)
+        btn_group_2 = QButtonGroup()
+        self.save_quality_radiobuttons = {
+            "mini": QRadioButton("Pooh"),
+            "thumb": QRadioButton("Low"),
+            "small": QRadioButton("Medium"),
+            "regular": QRadioButton("High"),
+            "original": QRadioButton("Original")
+        }
+        self.save_quality_radiobuttons[self.configs["save_quality"]].setChecked(True)
+        for btn in self.save_quality_radiobuttons.values():
+            btn_group_2.addButton(btn)
+        btn_layout_2 = QHBoxLayout()
+        for btn in self.save_quality_radiobuttons.values():
+            btn_layout_2.addWidget(btn)
+        for btn in self.save_quality_radiobuttons.values():
+            btn.clicked.connect(partial(self.radiobutton_change, "save"))
+        self.download_settings.layout().addWidget(label_save_quality, 4, 0)
+        self.download_settings.layout().addLayout(btn_layout_2, 4, 1)
+
+    def radiobutton_change(self, type_):
+        if type_ == "view":
+            for k, v in self.view_quality_radiobuttons.items():
+                if v.isChecked():
+                    self.configs["view_quality"] = k
+        if type_ == "save":
+            for k, v in self.save_quality_radiobuttons.items():
+                if v.isChecked():
+                    self.configs["save_quality"] = k
+        if type_ == "r18":
+            for k, v in self.r18_radiobuttons.items():
+                if v.isChecked():
+                    self.configs["r18"] = k
+
     def select_directory(self):
         directory = QFileDialog.getExistingDirectory(self, "Select Directory")
         self.directory_text.setText(directory)
@@ -133,7 +243,6 @@ class SettingsDialog(QDialog):
     def update_configs_directory(self):
         self.configs["save_dir"] = self.directory_text.text()
         print(self.configs["save_dir"])
-        print("??ASD?")
 
     def closeEvent(self, event):
         if self.configs != self.mainwindow.configs:
@@ -141,7 +250,7 @@ class SettingsDialog(QDialog):
                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No |
                                     QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
             if r == QMessageBox.StandardButton.Yes:
-                ...
+                self.save_changes()
             elif r == QMessageBox.StandardButton.No:
                 pass
             elif r == QMessageBox.StandardButton.Cancel:
@@ -149,12 +258,10 @@ class SettingsDialog(QDialog):
         super().closeEvent(event)
 
     def save_changes(self):
-
         self.mainwindow.term_signal.emit("fetch")
-        if self.configs["tag"] != self.mainwindow.configs["tag"]:
-            self.mainwindow.images.clear()
-            self.mainwindow.image_data.clear()
-        self.mainwindow.configs = self.configs
+        self.mainwindow.images.clear()
+        self.mainwindow.image_data.clear()
+        self.mainwindow.configs = self.config
 
 
 class WaitForTaskDialog(QDialog):
