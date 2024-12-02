@@ -1,15 +1,18 @@
 import sys
 from uuid import uuid4
 from PyQt6.QtCore import Qt, QThreadPool, pyqtSignal, QTimer
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (QApplication, QWidget, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QSizePolicy,
                              QMessageBox)
-from os.path import join as p_join
+from os.path import join as p_join, dirname
 from sys import platform
 
 from widgets import PixmapLabel, TaskViewWindow, SettingsDialog, WaitForTaskDialog
-from configs import load_config
+from configs import load_config, save_settings
 from threads import GetPictureURLsWorker, DownloaderWorker
+
+
+PATH = dirname(__file__)
 
 
 class MainWindow(QMainWindow):  # MainWindow class definition
@@ -18,7 +21,8 @@ class MainWindow(QMainWindow):  # MainWindow class definition
 
     def __init__(self):
         super().__init__()
-        self.configs = load_config()
+        self.configs = load_config(p_join(PATH), self)
+        self.setWindowIcon(QIcon(p_join(PATH, 'favicon.ico')))  # Set window icon
 
         self.setWindowTitle('LSP Viewer')
         self.container = QWidget(self)  # Container Widget
@@ -127,6 +131,7 @@ class MainWindow(QMainWindow):  # MainWindow class definition
         self.task_viewer.close()
         self.close_waiter.timer.start()
         self.close_waiter.exec()
+        save_settings(PATH, self.configs)
         super().closeEvent(a0)
 
     def save_image(self):
@@ -158,7 +163,7 @@ class MainWindow(QMainWindow):  # MainWindow class definition
             self.previous_images.insert(0, self.images.pop(0))
             self.current_image = self.previous_images[0][0]
             print(self.previous_images[0][1])
-            if len(self.previous_images) > self.configs["keep_num"] + 1:
+            while len(self.previous_images) > self.configs["keep_num"] + 1:
                 self.previous_images.pop()
         elif self.previous_image_index > 0:
             self.previous_image_index -= 1
@@ -222,23 +227,26 @@ class MainWindow(QMainWindow):  # MainWindow class definition
 
     def deal_errors(self, error, uid=''):
         if error == "get_url_failed":
-            QMessageBox.warning(self, 'Error', 'There was an error when fetching the urls of pictures.'
-                                '\nPlease check your Internet connection.'
-                                '\nPress the "Next" button to retry.')
+            if not self.configs["suppress_warnings"]:
+                QMessageBox.warning(self, 'Error', 'There was an error when fetching the urls of pictures.'
+                                    '\nPlease check your Internet connection.'
+                                    '\nPress the "Next" button to retry.')
             self.getting_url = False
         elif error == "get_pic_failed":
-            QMessageBox.information(self, 'Error', 'There was an error when fetching the pictures.\n'
-                                    'Please check your Internet connection.')
+            if not self.configs["suppress_warnings"]:
+                QMessageBox.information(self, 'Error', 'There was an error when fetching the pictures.\n'
+                                        'Please check your Internet connection.')
             self.cleanup_progress(uid)
         elif error == "save_pic_failed":
-            QMessageBox.warning(self, 'Error', 'There was an error when saving the pictures.'
-                                '\nPlease check your Internet connection and the destination directory.')
+            if not self.configs["suppress_warnings"]:
+                QMessageBox.warning(self, 'Error', 'There was an error when saving the pictures.'
+                                    '\nPlease check your Internet connection and the destination directory.')
             self.cleanup_progress(uid)
-        elif error == "no_pic":
+        elif error == "no_pic" and not self.configs["suppress_warnings"]:
             QMessageBox.warning(self, 'Error', "There's no picture related to the specific tag(s) or artist(s)."
                                 "\nPlease change the tags filter in the settings.")
-        elif error == "no_previous_pic":
-            QMessageBox.warning(self, 'Error', "There's no previous picture.")
+        elif error == "no_previous_pic" and not self.configs["suppress_warnings"]:
+            QMessageBox.warning(self, 'Error', "No more previous picture.")
 
     def update_image_urls(self, urls):  # Extend the image_url list, then return the current url count to the sub-thread
         self.image_data.extend(urls)
@@ -270,6 +278,7 @@ class MainWindow(QMainWindow):  # MainWindow class definition
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(p_join(PATH, "favicon.ico")))
     window = MainWindow()
     window.show()
     app.exec()
