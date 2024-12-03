@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QMainWindow, QPushButton, QV
 from os.path import join as p_join, dirname
 from sys import platform
 
-from widgets import PixmapLabel, TaskViewWindow, SettingsDialog, WaitForTaskDialog
+from widgets import PixmapLabel, TaskViewWindow, SettingsDialog, WaitForTaskDialog, DetailDialog
 from configs import load_config, save_settings
 from threads import GetPictureURLsWorker, DownloaderWorker
 
@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):  # MainWindow class definition
         self.task_viewer = TaskViewWindow(self)
         self.settings_dialog = SettingsDialog(self.configs, self)
         self.close_waiter = WaitForTaskDialog(self)
+        self.detail_dialog = DetailDialog(self, PATH)
 
         self.__init_widgets()
         self.__init_menubar()
@@ -110,6 +111,12 @@ class MainWindow(QMainWindow):  # MainWindow class definition
         self.action_next.triggered.connect(self.get_images)
         self.file_menu.addAction(self.action_next)
 
+        self.action_detail = QAction('&Check image details', self)
+        self.action_detail.setShortcut(Qt.Key.Key_Space)
+        self.action_detail.setStatusTip('Display the details of the image.')
+        self.action_detail.triggered.connect(self.show_detail)
+        self.file_menu.addAction(self.action_detail)
+
         self.action_show_task_view = QAction("Show TaskViewer", self)
         self.action_show_task_view.setShortcut('Ctrl+T')
         self.action_show_task_view.triggered.connect(self.task_viewer.show)
@@ -156,13 +163,12 @@ class MainWindow(QMainWindow):  # MainWindow class definition
                                                                      f'{data["author"]}.{data["ext"]}')
                                     )
         else:
-            QMessageBox.warning(self, "Info", "No images present now.")
+            QMessageBox.warning(self, "Warning", "No images present now.")
 
     def get_images(self):
         if self.images and self.previous_image_index == 0:
             self.previous_images.insert(0, self.images.pop(0))
             self.current_image = self.previous_images[0][0]
-            print(self.previous_images[0][1])
             while len(self.previous_images) > self.configs["keep_num"] + 1:
                 self.previous_images.pop()
         elif self.previous_image_index > 0:
@@ -254,8 +260,6 @@ class MainWindow(QMainWindow):  # MainWindow class definition
 
     def get_url_finished(self):
         self.getting_url = False
-        print(self.image_data)
-        print(len(self.image_data))
         self.start_download_worker()
 
     def cleanup_progress(self, uid):
@@ -269,11 +273,15 @@ class MainWindow(QMainWindow):  # MainWindow class definition
             self.cleanup_progress(uid)
             pixmap.save(p_join(self.configs["save_dir"], f'{details["pid"]}-{details["title"]} by'
                                                          f'{details["author"]}.{details["ext"]}'))
-            print("saved")
         else:
             self.cleanup_progress(uid)
             self.images.append((pixmap, details))
             self.start_download_worker()
+
+    def show_detail(self):
+        if self.current_image is None:
+            return QMessageBox.warning(self, 'Warning', 'No images present now.')
+        self.detail_dialog.exec(self.previous_images[self.previous_image_index][1])
 
 
 if __name__ == '__main__':

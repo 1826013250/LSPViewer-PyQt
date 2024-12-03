@@ -69,4 +69,4 @@ def verify_settings(c):
 
 def save_settings(path, c):
     with open(p_join(path, "settings.json"), 'w') as f:
-        j_dump(c, f, indent=4)
+        j_dump(c, f, indent=4, ensure_ascii=False)

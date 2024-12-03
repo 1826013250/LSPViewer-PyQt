@@ -2,8 +2,10 @@ from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QPixmap, QShortcut, QKeySequence
 from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QPushButton, \
     QProgressBar, QHBoxLayout, QRadioButton, QDialog, QTabWidget, QGridLayout, QLineEdit, QSizePolicy, QFileDialog, \
-    QMessageBox, QButtonGroup, QLayout, QSlider, QSpinBox
+    QMessageBox, QButtonGroup, QSlider, QSpinBox, QTableWidget, QTableWidgetItem
+from PyQt6.uic import loadUi
 from functools import partial
+from os.path import join as p_join
 
 
 class PixmapLabel(QLabel):
@@ -119,6 +121,7 @@ class SettingsDialog(QDialog):
         self.configs = configs.copy()
         self.mainwindow = parent
         self.__init_widgets()
+        self.restore_widget_status()
 
         self.close_shortcut = QShortcut(QKeySequence("Ctrl+W"), self)
         self.close_shortcut.activated.connect(self.close)
@@ -133,7 +136,6 @@ class SettingsDialog(QDialog):
         self.image_settings.layout().addWidget(self.label_save_directory, 0, 0)
         self.file_selection_layout = QHBoxLayout()
         self.directory_text = ReadOnlyLineEdit()
-        self.directory_text.setText(self.configs["save_dir"])
         self.file_selection_layout.addWidget(self.directory_text)
         self.directory_select_btn = QPushButton("Select...")
         self.directory_select_btn.clicked.connect(self.select_directory)
@@ -141,7 +143,7 @@ class SettingsDialog(QDialog):
         self.file_selection_layout.addWidget(self.directory_select_btn)
         self.image_settings.layout().addLayout(self.file_selection_layout, 0, 1)
 
-        self.label_r18 = QLabel("R18 State:")  # R18 State RadioButtons
+        self.label_r18 = QLabel("R18 State (Sorted by API):")  # R18 State RadioButtons
         self.label_r18.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.btn_group_r18 = QButtonGroup()
         self.r18_radiobuttons = {
@@ -156,7 +158,6 @@ class SettingsDialog(QDialog):
             self.btn_r18_layout.addWidget(btn)
         for btn in self.r18_radiobuttons.values():
             btn.clicked.connect(partial(self.radiobutton_change, 'r18'))
-        self.r18_radiobuttons[self.configs["r18"]].setChecked(True)
         self.image_settings.layout().addWidget(self.label_r18, 1, 0)
         self.image_settings.layout().addLayout(self.btn_r18_layout, 1, 1)
 
@@ -167,7 +168,6 @@ class SettingsDialog(QDialog):
             0: QRadioButton("No"),
             1: QRadioButton("Yes")
         }
-        self.ex_ai_radiobuttons[self.configs["ex_ai"]].setChecked(True)
         for btn in self.ex_ai_radiobuttons.values():
             self.btn_group_ai.addButton(btn)
         for btn in self.ex_ai_radiobuttons.values():
@@ -188,7 +188,6 @@ class SettingsDialog(QDialog):
             "regular": QRadioButton("High"),
             "original": QRadioButton("Original")
         }
-        self.view_quality_radiobuttons[self.configs["view_quality"]].setChecked(True)
         for btn in self.view_quality_radiobuttons.values():
             self.btn_group_1.addButton(btn)
         self.btn_layout_1 = QHBoxLayout()
@@ -209,7 +208,6 @@ class SettingsDialog(QDialog):
             "regular": QRadioButton("High"),
             "original": QRadioButton("Original")
         }
-        self.save_quality_radiobuttons[self.configs["save_quality"]].setChecked(True)
         for btn in self.save_quality_radiobuttons.values():
             self.btn_group_2.addButton(btn)
         self.btn_layout_2 = QHBoxLayout()
@@ -226,6 +224,21 @@ class SettingsDialog(QDialog):
 
         self.tag_settings = QWidget()  # Tag Settings container
         self.tab_widget.addTab(self.tag_settings, "Tags")
+        self.tag_settings.setLayout(QHBoxLayout())
+        self.tag_btn_layout = QVBoxLayout()
+        self.tags_list = QTableWidget()
+        self.tags_list.verticalHeader().hide()
+        self.tags_list.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.MinimumExpanding)
+        self.tag_settings.layout().addWidget(self.tags_list)
+        self.tag_settings.layout().addLayout(self.tag_btn_layout)
+        self.tag_add_btn = QPushButton("Add")
+        self.tag_remove_btn = QPushButton("Remove")
+        self.tag_btn_layout.addWidget(self.tag_add_btn)
+        self.tag_btn_layout.addWidget(self.tag_remove_btn)
+
+        self.author_settings = QWidget()  # Set specific authors
+        self.author_settings.setLayout(QHBoxLayout())
+        self.tab_widget.addTab(self.author_settings, "Authors")
 
         self.misc_settings = QWidget()  # Others, e.g. cache number...
         self.misc_settings.setLayout(QGridLayout())
@@ -236,12 +249,10 @@ class SettingsDialog(QDialog):
         self.keep_layout = QHBoxLayout()
         self.keep_slidebar = QSlider(Qt.Orientation.Horizontal)
         self.keep_slidebar.setRange(0, 20)
-        self.keep_slidebar.setValue(self.configs["keep_num"])
         self.keep_slidebar.sliderMoved.connect(partial(self.spinbox_slider_change, "keep"))
         self.keep_layout.addWidget(self.keep_slidebar)
         self.keep_spinbox = QSpinBox()
         self.keep_spinbox.setRange(0, 20)
-        self.keep_spinbox.setValue(self.configs["keep_num"])
         self.keep_spinbox.valueChanged.connect(partial(self.spinbox_slider_change, "keep"))
         self.keep_spinbox.setSingleStep(1)
         self.keep_layout.addWidget(self.keep_spinbox)
@@ -253,12 +264,10 @@ class SettingsDialog(QDialog):
         self.cache_layout = QHBoxLayout()
         self.cache_slidebar = QSlider(Qt.Orientation.Horizontal)
         self.cache_slidebar.setRange(0, 20)
-        self.cache_slidebar.setValue(self.configs["cache_num"])
         self.cache_slidebar.sliderMoved.connect(partial(self.spinbox_slider_change, "cache"))
         self.cache_layout.addWidget(self.cache_slidebar)
         self.cache_spinbox = QSpinBox()
         self.cache_spinbox.setRange(0, 20)
-        self.cache_spinbox.setValue(self.configs["cache_num"])
         self.cache_spinbox.valueChanged.connect(partial(self.spinbox_slider_change, "cache"))
         self.cache_spinbox.setSingleStep(1)
         self.cache_layout.addWidget(self.cache_spinbox)
@@ -279,7 +288,6 @@ class SettingsDialog(QDialog):
             self.btn_layout_suppress_warnings.addWidget(btn)
         for btn in self.suppress_warnings_radiobuttons.values():
             btn.clicked.connect(partial(self.radiobutton_change, "suppress"))
-        self.suppress_warnings_radiobuttons[self.configs["suppress_warnings"]].setChecked(True)
         self.misc_settings.layout().addLayout(self.btn_layout_suppress_warnings, 2, 1)
 
         self.misc_settings.layout().addWidget(self.placeholder, 3, 1)
@@ -296,7 +304,6 @@ class SettingsDialog(QDialog):
         self.finish_btn_layout.addWidget(self.ok_btn)
         self.finish_btn_layout.addWidget(self.cancel_btn)
         self.layout().addLayout(self.finish_btn_layout)
-
 
     def exec(self):
         self.configs = self.mainwindow.configs.copy()
@@ -344,6 +351,15 @@ class SettingsDialog(QDialog):
         self.directory_text.setText(self.configs["save_dir"])
         self.spinbox_slider_change("keep", self.configs["keep_num"])
         self.spinbox_slider_change("cache", self.configs["cache_num"])
+        self.tags_list.clear()
+        self.tags_list.setColumnCount(0)
+        self.tags_list.setRowCount(0)
+        for i, v in enumerate(self.configs["tag"]):
+            self.tags_list.setColumnCount(self.tags_list.columnCount() + 1)
+            self.tags_list.setHorizontalHeaderItem(i, QTableWidgetItem("Group %d" % (i + 1)))
+            for j, o in enumerate(v):
+                self.tags_list.setRowCount(self.tags_list.rowCount() + 1) if self.tags_list.rowCount() <= j else None
+                self.tags_list.setItem(j, i, QTableWidgetItem(o))
 
     def select_directory(self):
         directory = QFileDialog.getExistingDirectory(self, "Select Directory")
@@ -407,3 +423,26 @@ class WaitForTaskDialog(QDialog):
                 self.mainwindow.getting_url):
             self.task_finished = True
             self.close()
+
+
+class DetailDialog(QDialog):
+    def __init__(self, parent=None, path=None, data=None):
+        super().__init__(parent)
+        loadUi(p_join(path, "dialog.ui"), self)
+        self.data = data
+        self.shortcut = QShortcut(QKeySequence("Space"), self)
+        self.shortcut.activated.connect(self.close)
+
+    def exec(self, data=None):
+        if data is not None:
+            self.data = data
+        self.update_information()
+        super().exec()
+
+    def update_information(self):
+        self.title_pid.setText(f"{self.data['title']} - {self.data['pid']}")
+        self.author_uid.setText(f"{self.data['author']} - {self.data['uid']}")
+        self.tags.setText(f"{', '.join(self.data['tags'])}")
+        self.is_ai.setText({0: "Unknown. Please judge by tags.", 1: "No", 2: "Yes"}[self.data["ai_type"]])
+        self.is_r18.setText("Yes" if "R-18" in self.data["tags"] else "No")
+        self.links.setText(', '.join([f'<a href={url}>{type_}</a>' for type_, url in self.data["url"].items()]))

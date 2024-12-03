@@ -39,13 +39,14 @@ class GetPictureURLsWorker(QRunnable):
                                 'num': 20,
                                 'tag': self.configs['tag'],
                                 'size': ['original', 'regular', 'small', 'thumb', 'mini']
-                            }).json().get("data")
-            except (ConnectionError, ConnectTimeout, exceptions.SSLError):
+                            }, timeout=5).json().get("data")
+            except (ConnectionError, exceptions.ReadTimeout, exceptions.SSLError, exceptions.ChunkedEncodingError):
                 return self.signals.error.emit('get_url_failed', self.uuid)
             if not info:
                 return self.signals.error.emit("no_pic", self.uuid)
             data = [{'pid': dic['pid'], 'title': dic['title'], 'uid': dic['uid'], 'author': dic['author'],
-                     "tags": dic['tags'], "url": dic['urls'], "ext": dic['ext']} for dic in info]
+                     "tags": dic['tags'], "url": dic['urls'], "ext": dic['ext'], "ai_type": dic['aiType'],
+                     } for dic in info]
             self.signals.return_urls.emit(data)
             sleep(0.1)
         self.signals.finish_geturl.emit()
@@ -75,13 +76,13 @@ class DownloaderWorker(QRunnable):
                 url = self.data['url'][self.configs["view_quality"]]
             else:
                 url = self.data['url'][self.configs["save_quality"]]
-            resp = get(url, stream=True)
+            resp = get(url, stream=True, timeout=5)
             total = int(resp.headers.get('content-length', -1))
             current = 0
             image = BytesIO()
             if resp.status_code == 404:
                 return self.signals.stop.emit(self.uuid)
-            for chunk in resp.iter_content(chunk_size=1024):
+            for chunk in resp.iter_content(chunk_size=10240):
                 if chunk:
                     if self.stop:
                         return self.signals.stop.emit(self.uuid)
@@ -90,7 +91,7 @@ class DownloaderWorker(QRunnable):
                     if total > 0:
                         self.signals.progress.emit(self.uuid, current / total * 100)
                 sleep(0.01)
-        except (ConnectionError, ConnectTimeout, exceptions.SSLError):
+        except (ConnectionError, exceptions.SSLError, exceptions.ChunkedEncodingError, exceptions.ReadTimeout):
             if self.type == 'fetch':
                 self.signals.error.emit('get_pic_failed', self.uuid)
             elif self.type == 'download':
