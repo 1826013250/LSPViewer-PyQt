@@ -443,6 +443,16 @@ class DetailDialog(QDialog):
         self.title_pid.setText(f"{self.data['title']} - {self.data['pid']}")
         self.author_uid.setText(f"{self.data['author']} - {self.data['uid']}")
         self.tags.setText(f"{', '.join(self.data['tags'])}")
-        self.is_ai.setText({0: "Unknown. Please judge by tags.", 1: "No", 2: "Yes"}[self.data["ai_type"]])
+        self.is_ai.setText({0: "Yes" if include_list(["AI", "AI 画作"], self.data['tags']) else "Unknown",
+                            1: "No", 2: "Yes"}[self.data["ai_type"]])
         self.is_r18.setText("Yes" if "R-18" in self.data["tags"] else "No")
         self.links.setText(', '.join([f'<a href={url}>{type_}</a>' for type_, url in self.data["url"].items()]))
+        self.pixiv_link.setText(f"<a href=https://www.pixiv.net/artworks/{self.data['pid']}#{self.data['p']}>Open</a>")
+
+
+def include_list(iter_target, iter_dest):
+    include = False
+    for i in iter_target:
+        if i in iter_dest:
+            include = True
+    return include

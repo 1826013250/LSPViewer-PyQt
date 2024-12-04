@@ -46,7 +46,7 @@ class GetPictureURLsWorker(QRunnable):
                 return self.signals.error.emit("no_pic", self.uuid)
             data = [{'pid': dic['pid'], 'title': dic['title'], 'uid': dic['uid'], 'author': dic['author'],
                      "tags": dic['tags'], "url": dic['urls'], "ext": dic['ext'], "ai_type": dic['aiType'],
-                     } for dic in info]
+                     "p": dic['p']} for dic in info]
             self.signals.return_urls.emit(data)
             sleep(0.1)
         self.signals.finish_geturl.emit()
