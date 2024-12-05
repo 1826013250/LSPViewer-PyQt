@@ -1,3 +1,6 @@
+import sys
+from multiprocessing.managers import Value
+
 from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QPixmap, QShortcut, QKeySequence
 from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QPushButton, \
@@ -112,15 +115,19 @@ class TaskViewWindow(QWidget):
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, configs, parent=None):
+    def __init__(self, parent=None, path='.'):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setLayout(QVBoxLayout())
         self.tab_widget = QTabWidget()
         self.layout().addWidget(self.tab_widget)
-        self.configs = configs.copy()
         self.mainwindow = parent
+        self.configs = self.mainwindow.configs.copy()
+        self.configs["authors"] = self.mainwindow.configs["authors"].copy()
+        self.configs["tag"] = self.mainwindow.configs["tag"].copy()
+        self.add_author_dialog = AddAuthorDialog(path)
         self.__init_widgets()
+        self.restore_status = False
         self.restore_widget_status()
 
         self.close_shortcut = QShortcut(QKeySequence("Ctrl+W"), self)
@@ -130,6 +137,7 @@ class SettingsDialog(QDialog):
         self.image_settings = QWidget()  # Image/ Download settings tag container
         self.tab_widget.addTab(self.image_settings, "Images")  # add tag
         self.image_settings.setLayout(QGridLayout())  # set layout
+        self.image_settings.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
         self.label_save_directory = QLabel("Save Directory:")  # Save destination
         self.label_save_directory.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.label_save_directory.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -218,30 +226,57 @@ class SettingsDialog(QDialog):
         self.image_settings.layout().addWidget(self.label_save_quality, 4, 0)
         self.image_settings.layout().addLayout(self.btn_layout_2, 4, 1)
 
-        self.placeholder = QWidget()
-        self.placeholder.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.image_settings.layout().addWidget(self.placeholder, 5, 1)
-
         self.tag_settings = QWidget()  # Tag Settings container
         self.tab_widget.addTab(self.tag_settings, "Tags")
         self.tag_settings.setLayout(QHBoxLayout())
         self.tag_btn_layout = QVBoxLayout()
         self.tags_list = QTableWidget()
         self.tags_list.verticalHeader().hide()
+        self.tags_list.itemChanged.connect(self.tags_table_changes)
         self.tags_list.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.MinimumExpanding)
         self.tag_settings.layout().addWidget(self.tags_list)
         self.tag_settings.layout().addLayout(self.tag_btn_layout)
-        self.tag_add_btn = QPushButton("Add")
-        self.tag_remove_btn = QPushButton("Remove")
+        self.tag_add_btn = QPushButton("Add Group")
+        self.tag_add_btn.clicked.connect(partial(self.btn_actions, "tag", "add"))
+        self.tag_remove_btn = QPushButton("Remove Selected Group")
+        self.tag_remove_btn.clicked.connect(partial(self.btn_actions, "tag", "remove"))
+        self.tag_remove_all_btn = QPushButton("Remove All")
+        self.tag_remove_all_btn.clicked.connect(partial(self.btn_actions, "tag", "remove_all"))
+        self.tag_help_btn = QPushButton("Help")
+        help_text = "Double click the area below the Groups to add tags.\n" \
+                    "Leave a block empty to remove a tag.\n" \
+                    "The relationship of each GROUP is \"AND\".\n" \
+                    "The relationship of each ITEM in the groups is \"OR\"."
+        self.tag_help_btn.clicked.connect(partial(QMessageBox.information, self, "Help", help_text))
         self.tag_btn_layout.addWidget(self.tag_add_btn)
         self.tag_btn_layout.addWidget(self.tag_remove_btn)
+        self.tag_btn_layout.addWidget(self.tag_remove_all_btn)
+        self.tag_btn_layout.addWidget(self.tag_help_btn)
+        self.tag_btn_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.author_settings = QWidget()  # Set specific authors
         self.author_settings.setLayout(QHBoxLayout())
         self.tab_widget.addTab(self.author_settings, "Authors")
+        self.author_list = QListWidget()
+        self.author_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+        self.author_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.author_btn_layout = QVBoxLayout()
+        self.author_btn_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.author_btn_add = QPushButton("Add")
+        self.author_btn_add.clicked.connect(partial(self.btn_actions, "author", "add"))
+        self.author_btn_remove = QPushButton("Remove")
+        self.author_btn_remove.clicked.connect(partial(self.btn_actions, "author", "remove"))
+        self.author_btn_remove_all = QPushButton("Remove All")
+        self.author_btn_remove_all.clicked.connect(partial(self.btn_actions, "author", "remove_all"))
+        self.author_btn_layout.addWidget(self.author_btn_add)
+        self.author_btn_layout.addWidget(self.author_btn_remove)
+        self.author_btn_layout.addWidget(self.author_btn_remove_all)
+        self.author_settings.layout().addWidget(self.author_list)
+        self.author_settings.layout().addLayout(self.author_btn_layout)
 
         self.misc_settings = QWidget()  # Others, e.g. cache number...
         self.misc_settings.setLayout(QGridLayout())
+        self.misc_settings.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
         self.tab_widget.addTab(self.misc_settings, "Misc")
         self.keep_label = QLabel("Number of previous pictures:")  # Previous Pictures limit
         self.keep_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -290,8 +325,6 @@ class SettingsDialog(QDialog):
             btn.clicked.connect(partial(self.radiobutton_change, "suppress"))
         self.misc_settings.layout().addLayout(self.btn_layout_suppress_warnings, 2, 1)
 
-        self.misc_settings.layout().addWidget(self.placeholder, 3, 1)
-
         self.finish_btn_layout = QHBoxLayout()
         self.finish_btn_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.ok_btn = QPushButton("OK")
@@ -307,8 +340,89 @@ class SettingsDialog(QDialog):
 
     def exec(self):
         self.configs = self.mainwindow.configs.copy()
+        self.configs["authors"] = self.mainwindow.configs["authors"].copy()
+        self.configs["tag"] = self.mainwindow.configs["tag"].copy()
         self.restore_widget_status()
-        super().exec()
+        return super().exec()
+
+    def tags_table_changes(self):
+        operated = True
+        while operated:
+            operated = False
+            for col in range(self.tags_list.columnCount()):
+                for row in range(self.tags_list.rowCount() - 1):
+                    if ((self.tags_list.item(row, col) is None or not self.tags_list.item(row, col).text()) and
+                       (self.tags_list.item(row + 1, col) is not None and self.tags_list.item(row + 1, col).text())):
+                        self.tags_list.setItem(row, col, self.tags_list.takeItem(row + 1, col))
+                        operated = True
+
+        max_row = 0
+        for col in range(self.tags_list.columnCount()):
+            for row in range(self.tags_list.rowCount()):
+                if self.tags_list.item(row, col) is not None and self.tags_list.item(row, col).text():
+                    max_row = max(max_row, row + 1)
+        self.tags_list.setRowCount(max_row + 1)
+        if not self.restore_status:
+            tags = []
+            for col in range(self.tags_list.columnCount()):
+                tag = []
+                for row in range(self.tags_list.rowCount()):
+                    if self.tags_list.item(row, col) is not None and self.tags_list.item(row, col).text():
+                        tag.append(self.tags_list.item(row, col).text())
+                tags.append(tag)
+            self.configs["tag"] = tags
+            print(self.mainwindow.configs)
+
+    def btn_actions(self, type_, action):
+        if type_ == "author":
+            if action == "add":
+                if self.author_list.count() >= 20:
+                    return QMessageBox.warning(self, "Warning", "You can only specific up to 20 authors.")
+                status = self.add_author_dialog.exec()
+                if status:
+                    value = self.add_author_dialog.get_data()
+                    if value == 'error':
+                        QMessageBox.warning(self, "Warning", "Add author failed. Please check the format in the"
+                                            "last field.")
+                        return self.btn_actions(type_, action)
+                    if value["uid"]:
+                        for index in range(self.author_list.count()):
+                            if value["uid"] == self.author_list.item(index).text().split(" - ")[-1]:
+                                return QMessageBox.information(self, "Notice", "The specific uid is already exists.")
+                        self.author_list.addItem((f"{value['name']} - " if value['name'] else '') + value['uid'])
+                        self.configs['authors'].append([value['uid'], value['name']])
+            elif action == "remove":
+                items = self.author_list.selectedItems()
+                if items:
+                    for item in items:
+                        index = self.author_list.row(item)
+                        self.author_list.takeItem(index)
+                        self.configs["authors"].pop(index)
+                else:
+                    QMessageBox.information(self, "Notice", "You haven't selected any item.")
+            elif action == "remove_all":
+                self.configs["authors"].clear()
+                for index in range(self.author_list.count() - 1, -1, -1):
+                    self.author_list.takeItem(index)
+        elif type_ == "tag":
+            if action == "add":
+                self.tags_list.setColumnCount(self.tags_list.columnCount() + 1)
+                self.tags_list.setHorizontalHeaderItem(self.tags_list.columnCount() - 1,
+                                                       QTableWidgetItem(f"Group {self.tags_list.columnCount()}"))
+                if self.tags_list.rowCount() == 0:
+                    self.tags_table_changes()
+            elif action == "remove":
+                cols = set()
+                for index in self.tags_list.selectedIndexes():
+                    cols.add(index.column())
+                for col in reversed(list(cols)):
+                    self.tags_list.removeColumn(col)
+            elif action == "remove_all":
+                self.configs["tag"].clear()
+                self.tags_list.setColumnCount(0)
+                self.tags_list.setRowCount(0)
+                # for col in range(self.tags_list.columnCount() - 1, -1, -1):
+                #     self.tags_list.removeColumn(col)
 
     def radiobutton_change(self, type_):
         if type_ == "view":
@@ -343,6 +457,7 @@ class SettingsDialog(QDialog):
             self.cache_slidebar.setValue(num)
 
     def restore_widget_status(self):
+        self.restore_status = True
         self.r18_radiobuttons[self.configs["r18"]].setChecked(True)
         self.ex_ai_radiobuttons[self.configs["ex_ai"]].setChecked(True)
         self.view_quality_radiobuttons[self.configs["view_quality"]].setChecked(True)
@@ -360,6 +475,13 @@ class SettingsDialog(QDialog):
             for j, o in enumerate(v):
                 self.tags_list.setRowCount(self.tags_list.rowCount() + 1) if self.tags_list.rowCount() <= j else None
                 self.tags_list.setItem(j, i, QTableWidgetItem(o))
+        self.author_list.clear()
+        for uid, name in self.configs["authors"]:
+            if name:
+                self.author_list.addItem(f"{name} - {uid}")
+            else:
+                self.author_list.addItem(uid)
+        self.restore_status = False
 
     def select_directory(self):
         directory = QFileDialog.getExistingDirectory(self, "Select Directory")
@@ -377,7 +499,7 @@ class SettingsDialog(QDialog):
                 pass
             elif r == QMessageBox.StandardButton.Cancel:
                 return event.ignore()
-        super().closeEvent(event)
+        return super().closeEvent(event)
 
     def close(self, signal=None):
         if signal == "save":
@@ -443,7 +565,7 @@ class DetailDialog(QDialog):
         self.title_pid.setText(f"{self.data['title']} - {self.data['pid']}")
         self.author_uid.setText(f"{self.data['author']} - {self.data['uid']}")
         self.tags.setText(f"{', '.join(self.data['tags'])}")
-        self.is_ai.setText({0: "Yes" if include_list(["AI", "AI 画作"], self.data['tags']) else "Unknown",
+        self.is_ai.setText({0: "Yes" if include_list(["AI", "AI 画作", "NovelAI"], self.data['tags']) else "Unknown",
                             1: "No", 2: "Yes"}[self.data["ai_type"]])
         self.is_r18.setText("Yes" if "R-18" in self.data["tags"] else "No")
         self.links.setText(', '.join([f'<a href={url}>{type_}</a>' for type_, url in self.data["url"].items()]))
@@ -456,3 +578,35 @@ def include_list(iter_target, iter_dest):
         if i in iter_dest:
             include = True
     return include
+
+
+class AddAuthorDialog(QDialog):
+    def __init__(self, path, parent=None):
+        super().__init__(parent)
+        loadUi(p_join(path, "add_author.ui"), self)
+
+    def exec(self):
+        self.uid.clear()
+        self.name.clear()
+        self.full.clear()
+        self.uid.setFocus()
+        return super().exec()
+
+    def get_data(self):
+        if self.full.text():
+            try:
+                name, uid = self.full.text().split(" - ")
+                return {"uid": uid, "name": name}
+            except ValueError:
+                return "error"
+        return {"uid": self.uid.text(), "name": self.name.text()}
+
+
+if __name__ == "__main__":
+    from PyQt6.QtWidgets import QApplication, QPushButton
+    app = QApplication(sys.argv)
+    btn = QPushButton("push")
+    dialog = AddAuthorDialog(".")
+    btn.clicked.connect(lambda: (print(dialog.exec()), print(dialog.get_data())))
+    btn.show()
+    app.exec()

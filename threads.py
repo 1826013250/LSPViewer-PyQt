@@ -38,6 +38,7 @@ class GetPictureURLsWorker(QRunnable):
                                 'r18': self.configs.get('r18'),
                                 'num': 20,
                                 'tag': self.configs['tag'],
+                                'uid': [x[0] for x in self.configs["authors"]],
                                 'size': ['original', 'regular', 'small', 'thumb', 'mini']
                             }, timeout=5).json().get("data")
             except (ConnectionError, exceptions.ReadTimeout, exceptions.SSLError, exceptions.ChunkedEncodingError):

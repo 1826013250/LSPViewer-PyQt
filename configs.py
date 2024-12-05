@@ -34,6 +34,7 @@ def load_config(path, mainwindow):
             "save_quality": "original",
             "save_dir": p_join(path, "out"),
             "tag": [],
+            "authors": [],
             "r18": 0,
             "ex_ai": 0,
             "suppress_warnings": 0
@@ -45,7 +46,7 @@ def load_config(path, mainwindow):
 
 def verify_settings(c):
     if all([x in c.keys() for x in ["cache_num", "keep_num", "view_quality", "save_quality", "save_dir", "tag",
-                                    "r18", "ex_ai", "suppress_warnings"]]):
+                                    "r18", "ex_ai", "suppress_warnings", "authors"]]):
         status = True
         if c["cache_num"] not in range(20):
             status = False
@@ -63,6 +64,11 @@ def verify_settings(c):
             status = False
         if not exists(c["save_dir"]):
             status = False
+        if type(c["authors"]) is not list or type(c["tag"]) is not list:
+            status = False
+        if status:
+            if len(c["authors"]) > 20:
+                status = False
         return status
     return False
 

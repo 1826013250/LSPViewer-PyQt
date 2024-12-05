@@ -53,7 +53,7 @@ class MainWindow(QMainWindow):  # MainWindow class definition
         self.timer.start()
 
         self.task_viewer = TaskViewWindow(self)
-        self.settings_dialog = SettingsDialog(self.configs, self)
+        self.settings_dialog = SettingsDialog(self, PATH)
         self.close_waiter = WaitForTaskDialog(self)
         self.detail_dialog = DetailDialog(self, PATH)
 
@@ -248,9 +248,11 @@ class MainWindow(QMainWindow):  # MainWindow class definition
                 QMessageBox.warning(self, 'Error', 'There was an error when saving the pictures.'
                                     '\nPlease check your Internet connection and the destination directory.')
             self.cleanup_progress(uid)
-        elif error == "no_pic" and not self.configs["suppress_warnings"]:
-            QMessageBox.warning(self, 'Error', "There's no picture related to the specific tag(s) or artist(s)."
-                                "\nPlease change the tags filter in the settings.")
+        elif error == "no_pic":
+            if not self.configs["suppress_warnings"]:
+                QMessageBox.warning(self, 'Error', "There's NO MORE picture related to the specific tag(s) or"
+                                    " artist(s).\nPlease change the tags filter in the settings.")
+            self.getting_url = False
         elif error == "no_previous_pic" and not self.configs["suppress_warnings"]:
             QMessageBox.warning(self, 'Error', "No more previous picture.")
 
