@@ -1,5 +1,4 @@
 import sys
-from multiprocessing.managers import Value
 
 from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QPixmap, QShortcut, QKeySequence
@@ -371,7 +370,6 @@ class SettingsDialog(QDialog):
                         tag.append(self.tags_list.item(row, col).text())
                 tags.append(tag)
             self.configs["tag"] = tags
-            print(self.mainwindow.configs)
 
     def btn_actions(self, type_, action):
         if type_ == "author":
